@@ -1,0 +1,35 @@
+# data and scratch output (do NOT commit)
+data/
+outputs/
+outputs_medmnist/
+cifar-10-batches-py/
+cifar-10-python.tar.gz
+
+# run checkpoints. results/ is not ignored: it holds the committed data.
+outputs/**/*.pt
+data/**/*.pt
+*.pth
+
+# python
+__pycache__/
+*.pyc
+.ipynb_checkpoints/
+.venv/
+venv/
+
+# LaTeX build artifacts
+*.aux
+*.log
+*.out
+*.toc
+*.bbl
+*.blg
+*.lof
+*.lot
+*.fls
+*.fdb_latexmk
+*.synctex.gz
+
+# os
+.DS_Store
+Thumbs.db

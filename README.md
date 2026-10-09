@@ -1,68 +1,132 @@
-# Beyond Idealized Settings: Gradient Inversion Attacks and Defense Evaluation in Non-IID Cross-Silo Federated Learning
+# Beyond Idealized Settings
 
-Final year design project (FYDP), United International University.
+Gradient inversion attacks and defense evaluation in non-IID cross-silo federated
+learning. Final year design project, United International University.
 
-We evaluate two optimization-based gradient-inversion attacks — Deep Leakage from
-Gradients (DLG) and Inverting Gradients (IG) — and three defenses (gradient pruning,
-differential privacy, and their combination) under realistic non-IID cross-silo
-federated learning, rather than the idealized conditions common in prior work.
+Two attacks (DLG, Inverting Gradients) against FedAvg under Dirichlet non-IID
+partitioning, on CIFAR-10 and PathMNIST, with gradient clipping, Gaussian noise,
+pruning, and combinations as defenses.
 
-## Key findings
+## Setup
 
-- Reconstruction quality is not fixed. It rises as the model trains, and falls as
-  batch size and the number of local steps grow.
-- DLG (squared-L2 loss) is sensitive to gradient **magnitude**; IG (cosine loss) is
-  sensitive only to gradient **direction**. This single difference explains the
-  batch-size crossover, IG's flat behaviour across multi-step updates, and the
-  defense results.
-- **False security:** gradient clipping and light noise change gradient magnitude but
-  not direction, so they break DLG while IG bypasses them entirely. Only defenses that
-  corrupt gradient direction (strong noise, heavy pruning, combined) stop IG.
-- On the privacy–utility trade-off (at convergence), pruning with error feedback and
-  the combined defense suppress IG at almost no accuracy cost, while differential
-  privacy alone pays a real accuracy penalty for the same protection. The combined
-  defense is competitive but not a clear improvement over pruning alone.
+10 cross-silo clients, Dirichlet alpha = 0.5, 60 rounds, 2 local epochs,
+batch 64, SGD lr = 0.1, seed 42. Model is a 3-conv sigmoid CNN, 15,057 params.
+PathMNIST final accuracy 0.6077.
 
-## Repository structure
+DLG: L-BFGS, squared-L2, 300 iterations. IG: Adam, cosine distance plus TV prior
+0.01, 1200 iterations. Both with 2 restarts and iDLG analytic label recovery.
+Attack latents are drawn from a generator seeded on (victim, restart) only, so
+results are comparable across defense conditions.
+
+## Results
+
+Null floor: SSIM of three non-attacks scored against each victim, PathMNIST.
+
+| | SSIM |
+|---|---|
+| Uniform noise | 0.011 |
+| Another victim's image | 0.246 |
+| Grey square | 0.395 |
+| Dataset mean image | 0.402 |
+| DLG, undefended | 0.145 |
+| IG, undefended | 0.246 |
+
+Neither attack clears its own victim's floor in most cases (DLG 3/10, IG 4/10).
+On CIFAR-10 both clear it (DLG 0.741, IG 0.503).
+
+Defense matrix, PathMNIST SSIM with 95% CI over 10 victims.
+
+| Defense | DLG | IG |
+|---|---|---|
+| none | 0.145 ± 0.073 | 0.246 ± 0.163 |
+| clip C=4 | 0.058 ± 0.056 | 0.246 ± 0.163 |
+| noise sigma=0.01 | 0.023 ± 0.018 | 0.204 ± 0.123 |
+| noise sigma=0.1 | 0.030 ± 0.018 | 0.101 ± 0.048 |
+| prune 90% | 0.047 ± 0.033 | 0.132 ± 0.063 |
+| combined | 0.042 ± 0.026 | 0.135 ± 0.059 |
+
+Clipping cuts DLG by 60% and leaves IG unchanged (paired difference
+-0.000 ± 0.000). A rescaling probe over a 100x gradient-scale range gives IG
+0.0790-0.0791 flat while DLG peaks at scale 1.0 and drops either side. IG's
+cosine objective reads gradient direction only, so clipping cannot affect it.
+
+Linkability: each reconstruction scored against all 10 victims, PathMNIST
+undefended.
+
+| Attack | SSIM | Mean rank | Top-1 | Matched/mismatched |
+|---|---|---|---|---|
+| DLG | 0.145 | 2.20 | 7/10 | 4.72x |
+| IG | 0.246 | 3.70 | 2/10 | 1.62x |
+
+DLG scores lower SSIM and identifies more victims. IG's TV prior produces texture
+resembling every victim, giving it mismatched SSIM 0.152 against DLG's 0.031. On
+CIFAR-10 both saturate at rank 1.00, 10/10.
+
+PathMNIST class 1 is `background`. Two of ten randomly drawn victims were blank
+tiles, against which a grey square scores 0.852 and 0.897. Per-victim floors span
+0.141 to 0.897.
+
+## Layout
 
 ```
-FYDP_beyond_idealized.ipynb   Main notebook (shared library + all experiments)
-requirements.txt              Python dependencies
-figures/                      Result figures (axes, defense matrix, reconstruction grids)
-results/                      Optional: saved numeric outputs
+notebooks/
+  federated-gradient-inversion.ipynb   CIFAR-10, four axes of realism
+  medmnist_replication.ipynb           PathMNIST, null floor, linkability
+  cifar_control.ipynb                  CIFAR-10 control for the above
+scripts/ptload.py                      read the .pt files without torch
+results/                               JSON, reconstructions, cross-SSIM matrices
+figures/                               plots for both datasets
 ```
 
-## How to run
+## Running
 
-Designed for a single GPU (developed on an NVIDIA T4 via Kaggle).
+Single GPU, developed on a Kaggle T4.
 
-1. Open the notebook. Set the accelerator to GPU.
-2. Run the **shared library** cell first.
-3. Run **Step 1** three times, changing `WHICH`: `"smoke"`, then `"noniid"`, then `"iid"`.
-   (Both `noniid` and `iid` are needed for the IID-vs-non-IID comparison.)
-4. Run Steps 2–12 in order. Do not use "Run All": Step 1 must be run three times, and
-   the long training cells should be run individually.
+`federated-gradient-inversion.ipynb`: run the shared library cell, then Step 1
+three times with `WHICH` set to `"smoke"`, `"noniid"`, `"iid"`, then Steps 2-12
+in order. Do not use Run All.
 
-Each cell saves its figures to `outputs/` and prints its result tables.
+`medmnist_replication.ipynb`: run Cell S with `SMOKE = True` first, then set
+`SMOKE = False` and run M1, N, X, M2R, M2P, I, A, M2b, M7. Run X (null baseline)
+before M2R (defense matrix). M2R checkpoints after each condition; the matrix
+takes about two hours.
 
-## Method summary
+## Reading the results
 
-- Dataset: CIFAR-10, pixels in [0, 1]. Non-IID split via Dirichlet (alpha = 0.5);
-  near-IID via alpha = 100. Cross-silo, 10 clients.
-- Model: small 3-conv sigmoid CNN (~15.8k params), as in the original DLG work.
-- Training: FedAvg, 60 rounds, 2 local epochs, SGD lr = 0.1.
-- Metrics: PSNR, SSIM (primary), MSE; model test accuracy for utility.
-- All reconstruction numbers are means over 5 victim inputs (mean +/- std).
+```python
+import sys; sys.path.insert(0, "scripts")
+from ptload import load
+
+d = load("results/med_recons.pt")
+d["all_recon"]["clip C=4|IG"]   # (10, 3, 32, 32)
+d["VX"], d["VY"]                # victim images and labels
+```
+
+```python
+import numpy as np
+z = np.load("results/med_cross_ssim.npz")
+z["none__DLG"]                  # [i, j] = SSIM(recon_i, victim_j)
+```
+
+`results/` holds the only copies of the per-victim data and is committed
+deliberately, so the `*.pt` rule in `.gitignore` is scoped to `outputs/` and
+`data/`.
+
+## Limitations
+
+One image per attack, not a batch. 15k-parameter CNN only. 95% CIs over 10
+victims are wide; per-victim arrays are in `results_medmnist.json` and the paired
+differences are more reliable than comparing means. `results_cifar.json` was lost
+to a Kaggle session reset, but the CIFAR numbers above were recomputed from
+`cifar_recons.pt` and `cifar_cross_ssim.npz`.
+
+The combined pruning and DP defense is not novel; prior work has studied it. The
+clipping bypass is in Li et al. (CVPR 2022) with the same parameters, and
+magnitude invariance is stated in Geiping et al.
 
 ## References
 
 - Zhu, Liu, Han. Deep Leakage from Gradients. NeurIPS 2019.
 - Zhao, Mopuri, Bilen. iDLG: Improved Deep Leakage from Gradients. 2020.
-- Geiping et al. Inverting Gradients — How Easy Is It to Break Privacy in
-  Federated Learning? NeurIPS 2020.
-
-## Notes
-
-This is coursework. The combined pruning + differential-privacy defense is not novel;
-prior work has studied it. The contribution here is the evaluation under realistic
-conditions and the comparison of attacks and defenses, not the defense mechanism.
+- Geiping et al. Inverting Gradients. NeurIPS 2020.
+- Yang et al. MedMNIST v2. Scientific Data, 2023.
